@@ -1115,11 +1115,14 @@
     if (e.code === 'Escape' && state.mode !== 'menu') toMenu();
   });
 
-  // מגע/עכבר:
+  // ---------- מגע ועכבר ----------
   //   החלקה ימינה/שמאלה = מעבר נתיב, החלקה למעלה = קפיצה, החלקה למטה = פלוץ,
   //   נגיעה קצרה = קפיצה, נגיעה כפולה = פלוץ (אם יש).
-  // המחווה מזוהה כבר בזמן התנועה (pointermove) ולא רק בשחרור, כדי שהתגובה תהיה מיידית.
-  const SWIPE_PX = 28;
+  // במובייל משתמשים באירועי touch ישירים (לא pointer): דפדפני מובייל מבטלים
+  // אירועי pointer באמצע מחווה (pointercancel) כשהם חושבים שזו גלילה, ואז
+  // ההחלקה הולכת לאיבוד. עם touchmove + preventDefault זה לא קורה.
+  // המחווה מזוהה כבר בזמן התנועה ולא רק בשחרור, כדי שהתגובה תהיה מיידית.
+  const SWIPE_PX = 24;
   let gesture = null, lastTap = 0;
 
   function handleSwipe(dx, dy) {
@@ -1127,41 +1130,82 @@
     else if (dy < 0) jump();
     else fart();
   }
-
-  canvas.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    ensureAudio();
+  function gestureStart(id, x, y) {
     if (gesture) return;   // אצבע שנייה לא מתחילה מחווה חדשה
-    gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, done: false };
-    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-  });
-  canvas.addEventListener('pointermove', e => {
-    if (!gesture || gesture.done || e.pointerId !== gesture.id || state.mode !== 'playing') return;
-    const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+    gesture = { id, x, y, done: false };
+  }
+  function gestureMove(id, x, y) {
+    if (!gesture || gesture.done || id !== gesture.id || state.mode !== 'playing') return;
+    const dx = x - gesture.x, dy = y - gesture.y;
     if (Math.hypot(dx, dy) < SWIPE_PX) return;
     gesture.done = true;
     handleSwipe(dx, dy);
-  });
-  const endGesture = e => {
-    if (!gesture || e.pointerId !== gesture.id) return;
+  }
+  function gestureEnd(id, x, y, cancelled) {
+    if (!gesture || id !== gesture.id) return;
     const g = gesture; gesture = null;
-    if (g.done || state.mode !== 'playing' || e.type === 'pointercancel') return;
-    const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    if (g.done || cancelled || state.mode !== 'playing') return;
+    const dx = x - g.x, dy = y - g.y;
     if (Math.hypot(dx, dy) >= SWIPE_PX) { handleSwipe(dx, dy); return; }
     // נגיעה קצרה
     const now = performance.now();
     if (now - lastTap < 320 && fart()) { lastTap = 0; return; }   // נגיעה כפולה = פלוץ
     lastTap = now;
     jump();
+  }
+
+  // מגע (טלפון/טאבלט). מאזינים על כל הבמה, כך שגם אם משהו מעל הקנבס - המחווה נתפסת.
+  const stage = document.getElementById('stage');
+  const touchById = (e, id) => Array.from(e.changedTouches).find(t => t.identifier === id);
+  stage.addEventListener('touchstart', e => {
+    if (state.mode !== 'playing') return;   // בתפריט הכפתורים צריכים לעבוד רגיל
+    e.preventDefault();
+    ensureAudio();
+    const t = e.changedTouches[0];
+    gestureStart(t.identifier, t.clientX, t.clientY);
+  }, { passive: false });
+  stage.addEventListener('touchmove', e => {
+    if (state.mode !== 'playing') return;
+    e.preventDefault();
+    if (!gesture) return;
+    const t = touchById(e, gesture.id);
+    if (t) gestureMove(t.identifier, t.clientX, t.clientY);
+  }, { passive: false });
+  const onTouchEnd = e => {
+    if (!gesture) return;
+    const t = touchById(e, gesture.id);
+    if (!t) return;
+    if (state.mode === 'playing') e.preventDefault();
+    ensureAudio();   // iOS משחרר את הצליל רק אחרי touchend
+    gestureEnd(t.identifier, t.clientX, t.clientY, e.type === 'touchcancel');
   };
-  canvas.addEventListener('pointerup', endGesture);
-  canvas.addEventListener('pointercancel', endGesture);
-  // בלי זה iOS מגלגל/מזיז את הדף בזמן החלקה
-  canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  stage.addEventListener('touchend', onTouchEnd, { passive: false });
+  stage.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+  // עכבר (מחשב): אותה לוגיקה דרך אירועי pointer, רק לעכבר כדי לא לטפל פעמיים במגע.
+  canvas.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse') return;
+    e.preventDefault();
+    ensureAudio();
+    gestureStart('mouse', e.clientX, e.clientY);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || !gesture || gesture.id !== 'mouse') return;
+    gestureMove('mouse', e.clientX, e.clientY);
+  });
+  const onMouseEnd = e => {
+    if (e.pointerType !== 'mouse' || !gesture || gesture.id !== 'mouse') return;
+    gestureEnd('mouse', e.clientX, e.clientY, e.type === 'pointercancel');
+  };
+  window.addEventListener('pointerup', onMouseEnd);
+  window.addEventListener('pointercancel', onMouseEnd);
+
+  // אם המשחק נגמר באמצע מחווה, לא להשאיר מחווה תקועה
+  window.addEventListener('blur', () => { gesture = null; });
 
   reset();
   requestAnimationFrame(frame);
 
   // חשיפה לדיבוג בקונסול
-  window.RoadRun = { state, jump, moveLane, fart, spawnSpecial, startGame, toMenu, PLAYER_Z, LANE_W, roadTex, scene, camera, renderer };
+  window.RoadRun = { state, jump, moveLane, fart, spawnSpecial, startGame, toMenu, PLAYER_Z, LANE_W, roadTex, scene, camera, renderer, gestureStart, gestureMove, gestureEnd };
 })();

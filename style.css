@@ -31,6 +31,8 @@ canvas#game {
   background: #7fc4f0;
   touch-action: none;   /* כל המחוות שייכות למשחק, לא לדפדפן */
 }
+#stage { touch-action: none; }
+#menu, #gameover { touch-action: manipulation; }   /* בתפריטים הכפתורים צריכים לעבוד רגיל */
 
 .mobile-only { display: none; }
 @media (pointer: coarse) {
