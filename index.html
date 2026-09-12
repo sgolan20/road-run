@@ -2,7 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1630">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="רוד ראן">
   <title>רוד ראן</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
@@ -21,7 +26,7 @@
         👮 <div class="bar"><div id="hud-cop" class="fill"></div></div>
       </div>
       <div id="hud-shield" class="hud-item power hidden">🛡️ מגן</div>
-      <div id="hud-fart" class="hud-item power hidden">💨 פלוץ מוכן! לחיצה כפולה</div>
+      <div id="hud-fart" class="hud-item power hidden">💨 פלוץ מוכן!</div>
     </div>
 
     <!-- תפריט ראשי -->
@@ -47,10 +52,10 @@
         </button>
       </div>
       <button id="start" class="big">התחל לרוץ!</button>
-      <p class="hint">רווח / חץ למעלה = קפיצה (אפשר קפיצה כפולה) · חצים ימינה ושמאלה = מעבר נתיב</p>
-      <p class="hint">במגע: נגיעה = קפיצה, החלקה הצידה = מעבר נתיב</p>
+      <p class="hint desktop-only">רווח / חץ למעלה = קפיצה (אפשר קפיצה כפולה) · חצים ימינה ושמאלה = מעבר נתיב · F = פלוץ</p>
+      <p class="hint mobile-only">החלקה ימינה/שמאלה = מעבר נתיב · החלקה למעלה או נגיעה = קפיצה · החלקה למטה או נגיעה כפולה = פלוץ</p>
       <p class="hint">כל פגיעה מקרבת את השוטר, כל פנקייק מרחיק אותו קצת.</p>
-      <p class="hint">כל 250 מטר: פנקייק מוזהב = מגן (השוטר נזרק אחורה אם הוא תופס), פנקייק רקוב = פלוץ ענק (לחיצה כפולה או F) שמעיף את השוטר.</p>
+      <p class="hint">כל 250 מטר: פנקייק מוזהב = מגן (השוטר נזרק אחורה אם הוא תופס), פנקייק רקוב = פלוץ ענק שמעיף את השוטר.</p>
     </div>
 
     <!-- סיום משחק -->

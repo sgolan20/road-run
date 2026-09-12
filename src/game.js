@@ -56,8 +56,11 @@
   // ---------- צלילים ----------
   let audio = null;
   function ensureAudio() {
-    if (audio) return;
-    try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
+    if (!audio) {
+      try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
+    }
+    // ב-iOS ההקשר נפתח מושהה עד מחווה של המשתמש
+    if (audio && audio.state === 'suspended') audio.resume().catch(() => {});
   }
   function beep(freq, dur = 0.08, type = 'square', vol = 0.06) {
     if (!audio) return;
@@ -343,10 +346,12 @@
   //  סצנה
   // ============================================================
   const canvas = document.getElementById('game');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // מכשיר מגע (טלפון/טאבלט): פחות פיקסלים וצללים קלים יותר כדי לשמור על 60fps
+  const isMobile = window.matchMedia('(pointer: coarse)').matches;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
   const SKY = 0x7fc4f0;
   const scene = new THREE.Scene();
@@ -364,7 +369,7 @@
   sun.position.set(12, 25, 8);
   sun.target.position.set(0, 0, -6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
   sun.shadow.camera.left = -16; sun.shadow.camera.right = 16;
   sun.shadow.camera.top = 16; sun.shadow.camera.bottom = -16;
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 70;
@@ -1047,9 +1052,22 @@
     const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    // במסך אנכי (טלפון) המצלמה עומדת יותר מאחור ופחות מהצד, מסתכלת רחוק קדימה,
+    // ושדה הראייה רחב יותר, כדי שהילד, השוטר והכביש ייכנסו לפריים הצר.
+    if (camera.aspect < 0.8) {
+      camera.fov = 78;
+      camBase.set(2.8, 6.8, 12.5); camLook.set(-1.3, 0.3, -16);
+    } else if (camera.aspect < 1.2) {
+      camera.fov = 66;
+      camBase.set(5.5, 6, 11.5); camLook.set(-1, 0.8, -12);
+    } else {
+      camera.fov = 55;
+      camBase.set(...CAM_POS); camLook.set(...CAM_LOOK);
+    }
     camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 150));
   resize();
 
   // ============================================================
@@ -1097,23 +1115,49 @@
     if (e.code === 'Escape' && state.mode !== 'menu') toMenu();
   });
 
-  // מגע/עכבר: החלקה הצידה = מעבר נתיב, נגיעה קצרה = קפיצה, לחיצה כפולה = פלוץ (אם יש)
-  let pointerStart = null, lastTap = 0;
+  // מגע/עכבר:
+  //   החלקה ימינה/שמאלה = מעבר נתיב, החלקה למעלה = קפיצה, החלקה למטה = פלוץ,
+  //   נגיעה קצרה = קפיצה, נגיעה כפולה = פלוץ (אם יש).
+  // המחווה מזוהה כבר בזמן התנועה (pointermove) ולא רק בשחרור, כדי שהתגובה תהיה מיידית.
+  const SWIPE_PX = 28;
+  let gesture = null, lastTap = 0;
+
+  function handleSwipe(dx, dy) {
+    if (Math.abs(dx) > Math.abs(dy)) moveLane(dx > 0 ? 1 : -1);
+    else if (dy < 0) jump();
+    else fart();
+  }
+
   canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
     ensureAudio();
-    pointerStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+    if (gesture) return;   // אצבע שנייה לא מתחילה מחווה חדשה
+    gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, done: false };
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   });
-  canvas.addEventListener('pointerup', e => {
-    if (!pointerStart || state.mode !== 'playing') { pointerStart = null; return; }
-    const dx = e.clientX - pointerStart.x, dy = e.clientY - pointerStart.y;
-    pointerStart = null;
-    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) { moveLane(dx > 0 ? 1 : -1); return; }
+  canvas.addEventListener('pointermove', e => {
+    if (!gesture || gesture.done || e.pointerId !== gesture.id || state.mode !== 'playing') return;
+    const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+    if (Math.hypot(dx, dy) < SWIPE_PX) return;
+    gesture.done = true;
+    handleSwipe(dx, dy);
+  });
+  const endGesture = e => {
+    if (!gesture || e.pointerId !== gesture.id) return;
+    const g = gesture; gesture = null;
+    if (g.done || state.mode !== 'playing' || e.type === 'pointercancel') return;
+    const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    if (Math.hypot(dx, dy) >= SWIPE_PX) { handleSwipe(dx, dy); return; }
+    // נגיעה קצרה
     const now = performance.now();
-    if (now - lastTap < 320 && fart()) { lastTap = 0; return; }   // לחיצה כפולה = פלוץ
+    if (now - lastTap < 320 && fart()) { lastTap = 0; return; }   // נגיעה כפולה = פלוץ
     lastTap = now;
     jump();
-  });
+  };
+  canvas.addEventListener('pointerup', endGesture);
+  canvas.addEventListener('pointercancel', endGesture);
+  // בלי זה iOS מגלגל/מזיז את הדף בזמן החלקה
+  canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
   reset();
   requestAnimationFrame(frame);
