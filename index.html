@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>רוד ראן</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="vignette"></div>
+    <div id="flash"></div>
+
+    <!-- HUD -->
+    <div id="hud" class="screen hidden">
+      <div class="hud-item">🥞 <span id="hud-pancakes">0</span></div>
+      <div class="hud-item">📏 <span id="hud-distance">0</span> מ'</div>
+      <div class="hud-item cop-meter" title="כמה השוטר קרוב">
+        👮 <div class="bar"><div id="hud-cop" class="fill"></div></div>
+      </div>
+      <div id="hud-shield" class="hud-item power hidden">🛡️ מגן</div>
+      <div id="hud-fart" class="hud-item power hidden">💨 פלוץ מוכן! לחיצה כפולה</div>
+    </div>
+
+    <!-- תפריט ראשי -->
+    <div id="menu" class="screen overlay">
+      <h1>רוד ראן</h1>
+      <p class="story">
+        הילד צייר גרפיטי על הקיר של התחנה... והשוטר לא אהב את זה.<br>
+        עכשיו הוא רץ ברחובות, קופץ מעל מכשולים ואוסף פנקייקים בדרך.
+      </p>
+      <h2>בחרו דמות</h2>
+      <div id="chars" class="chars">
+        <button class="char selected" data-char="kid">
+          <canvas width="110" height="120"></canvas>
+          <span>הילד</span>
+        </button>
+        <button class="char" data-char="dragon">
+          <canvas width="110" height="120"></canvas>
+          <span>החבר הדרקון</span>
+        </button>
+        <button class="char" data-char="redhat">
+          <canvas width="110" height="120"></canvas>
+          <span>החבר עם הכובע</span>
+        </button>
+      </div>
+      <button id="start" class="big">התחל לרוץ!</button>
+      <p class="hint">רווח / חץ למעלה = קפיצה (אפשר קפיצה כפולה) · חצים ימינה ושמאלה = מעבר נתיב</p>
+      <p class="hint">במגע: נגיעה = קפיצה, החלקה הצידה = מעבר נתיב</p>
+      <p class="hint">כל פגיעה מקרבת את השוטר, כל פנקייק מרחיק אותו קצת.</p>
+      <p class="hint">כל 250 מטר: פנקייק מוזהב = מגן (השוטר נזרק אחורה אם הוא תופס), פנקייק רקוב = פלוץ ענק (לחיצה כפולה או F) שמעיף את השוטר.</p>
+    </div>
+
+    <!-- סיום משחק -->
+    <div id="gameover" class="screen overlay hidden">
+      <h1>נתפסת!</h1>
+      <p class="score-line">🥞 פנקייקים: <span id="go-pancakes">0</span></p>
+      <p class="score-line">📏 מרחק: <span id="go-distance">0</span> מ'</p>
+      <p class="score-line">⭐ ניקוד: <span id="go-score">0</span></p>
+      <p class="score-line best">🏆 שיא: <span id="go-best">0</span></p>
+      <button id="restart" class="big">עוד פעם!</button>
+      <button id="tomenu" class="small">חזרה לתפריט</button>
+    </div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="src/game.js"></script>
+</body>
+</html>
