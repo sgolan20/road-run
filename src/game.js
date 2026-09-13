@@ -76,7 +76,8 @@
   function ensureAudio() {
     if (!audio) {
       try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
-      for (const name in rawSounds) decodeSound(name);
+      for (const name in rawSounds) { if (name !== '__music') decodeSound(name); }
+      decodeMusic();
     }
     // ב-iOS ההקשר נפתח מושהה עד מחווה של המשתמש
     if (audio && audio.state === 'suspended') audio.resume().catch(() => {});
@@ -102,7 +103,7 @@
 
   function playSample(name) {
     const buf = soundBuffers[name];
-    if (!audio || !buf || audio.state === 'suspended') return false;
+    if (muted || !audio || !buf || audio.state === 'suspended') return false;
     try {
       const def = SOUND_FILES[name];
       const src = audio.createBufferSource();
@@ -118,7 +119,7 @@
   }
 
   function beep(freq, dur = 0.08, type = 'square', vol = 0.06) {
-    if (!audio) return;
+    if (!audio || muted) return;
     try {
       const o = audio.createOscillator();
       const g = audio.createGain();
@@ -147,6 +148,69 @@
   const sfx = {};
   for (const name in SOUND_FILES) {
     sfx[name] = () => { if (!playSample(name)) beeps[name](); };
+  }
+
+  // ---------- מוזיקת רקע ----------
+  // לופ אינסטרומנטלי בווליום נמוך שרץ מתחת למשחק. מנוגן דרך WebAudio עם
+  // loop=true, כך שאין פער בין הסיבובים (בניגוד ל-<audio> רגיל).
+  const MUSIC_FILE = 'sounds/music-loop.mp3';
+  const MUSIC_VOL = 0.2;
+  let musicBuffer = null, musicSource = null, musicGain = null;
+  let muted = false;
+  try { muted = localStorage.getItem('roadrun_muted') === '1'; } catch (e) { /* ignore */ }
+
+  fetch(MUSIC_FILE)
+    .then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+    .then(data => { rawSounds.__music = data; decodeMusic(); })
+    .catch(() => { /* אין מוזיקה - המשחק פשוט שקט יותר */ });
+
+  function decodeMusic() {
+    if (!audio || !rawSounds.__music || musicBuffer) return;
+    const data = rawSounds.__music;
+    rawSounds.__music = null;
+    try {
+      audio.decodeAudioData(data, buf => {
+        musicBuffer = buf;
+        if (state.mode === 'playing') startMusic();
+      }, () => {});
+    } catch (e) { /* ignore */ }
+  }
+
+  function startMusic() {
+    if (!audio || !musicBuffer || musicSource || muted) return;
+    try {
+      musicSource = audio.createBufferSource();
+      musicGain = audio.createGain();
+      musicSource.buffer = musicBuffer;
+      musicSource.loop = true;
+      musicGain.gain.value = 0;
+      musicSource.connect(musicGain).connect(audio.destination);
+      musicSource.start();
+      // כניסה רכה כדי שהמוזיקה לא תיפול פתאום
+      musicGain.gain.linearRampToValueAtTime(MUSIC_VOL, audio.currentTime + 1.2);
+    } catch (e) { musicSource = null; }
+  }
+
+  function stopMusic() {
+    if (!musicSource) return;
+    const src = musicSource, gain = musicGain;
+    musicSource = null; musicGain = null;
+    try {
+      gain.gain.cancelScheduledValues(audio.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, audio.currentTime);
+      gain.gain.linearRampToValueAtTime(0, audio.currentTime + 0.5);
+      src.stop(audio.currentTime + 0.55);
+    } catch (e) { try { src.stop(); } catch (e2) { /* ignore */ } }
+  }
+
+  function setMuted(value) {
+    muted = value;
+    try { localStorage.setItem('roadrun_muted', muted ? '1' : '0'); } catch (e) { /* ignore */ }
+    const btn = document.getElementById('sound-toggle');
+    btn.textContent = muted ? '🔇' : '🔊';
+    btn.classList.toggle('muted', muted);
+    if (muted) stopMusic();
+    else if (state.mode === 'playing') startMusic();
   }
 
   // ============================================================
@@ -986,6 +1050,7 @@
 
   function endGame() {
     state.mode = 'gameover';
+    stopMusic();
     sfx.caught();
     const score = Math.floor(state.pancakes * 10 + state.distance);
     if (score > state.best) {
@@ -1146,6 +1211,7 @@
     for (let z = -32; z > SPAWN_Z; z -= rand(11, 18)) spawnWave(z);
     state.spawnDist = 6;
     state.mode = 'playing';
+    startMusic();
     screens.menu.classList.add('hidden');
     screens.gameover.classList.add('hidden');
     screens.hud.classList.remove('hidden');
@@ -1154,11 +1220,21 @@
 
   function toMenu() {
     state.mode = 'menu';
+    stopMusic();
     reset();
     screens.gameover.classList.add('hidden');
     screens.hud.classList.add('hidden');
     screens.menu.classList.remove('hidden');
   }
+
+  const soundBtn = $('sound-toggle');
+  soundBtn.textContent = muted ? '🔇' : '🔊';
+  soundBtn.classList.toggle('muted', muted);
+  soundBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    ensureAudio();
+    setMuted(!muted);
+  });
 
   $('start').addEventListener('click', startGame);
   $('restart').addEventListener('click', startGame);
@@ -1171,6 +1247,7 @@
       else if (state.mode === 'menu') startGame();
       else if (state.mode === 'gameover' && !screens.gameover.classList.contains('hidden')) startGame();
     }
+    if (e.code === 'KeyM') { e.preventDefault(); ensureAudio(); setMuted(!muted); }
     if (e.code === 'KeyF' || e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); fart(); }
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') { e.preventDefault(); moveLane(-1); }
     if (e.code === 'ArrowRight' || e.code === 'KeyD') { e.preventDefault(); moveLane(1); }
@@ -1269,5 +1346,5 @@
   requestAnimationFrame(frame);
 
   // חשיפה לדיבוג בקונסול
-  window.RoadRun = { state, jump, moveLane, fart, spawnSpecial, startGame, toMenu, PLAYER_Z, LANE_W, roadTex, scene, camera, renderer, sfx, soundBuffers, gestureStart, gestureMove, gestureEnd };
+  window.RoadRun = { state, jump, moveLane, fart, spawnSpecial, startGame, toMenu, PLAYER_Z, LANE_W, roadTex, scene, camera, renderer, sfx, soundBuffers, setMuted, startMusic, stopMusic, gestureStart, gestureMove, gestureEnd };
 })();
