@@ -54,14 +54,69 @@
   }
 
   // ---------- צלילים ----------
+  // הסאונדים הופקו ב-ElevenLabs ויושבים בתיקיית sounds/. הקבצים נטענים מראש,
+  // מפוענחים בנגיעה הראשונה של המשתמש ומנוגנים דרך WebAudio (השהיה נמוכה,
+  // אפשר לנגן כמה במקביל). אם הטעינה נכשלת - למשל פתיחה מהדיסק בלי שרת -
+  // חוזרים אוטומטית לצפצופים הסינתטיים, כך שהמשחק אף פעם לא נשאר בלי סאונד.
+  const SOUND_FILES = {
+    jump:    { file: 'jump.mp3',    vol: 0.45, rate: 0.08 },
+    pancake: { file: 'pancake.mp3', vol: 0.3,  rate: 0.12 },
+    hit:     { file: 'hit.mp3',     vol: 0.7 },
+    caught:  { file: 'caught.mp3',  vol: 0.85 },
+    golden:  { file: 'golden.mp3',  vol: 0.75 },
+    rotten:  { file: 'rotten.mp3',  vol: 0.6 },
+    shield:  { file: 'shield.mp3',  vol: 0.8 },
+    fart:    { file: 'fart.mp3',    vol: 0.9, rate: 0.1 },
+  };
+
   let audio = null;
+  const rawSounds = {};      // name -> ArrayBuffer שנטען מהרשת
+  const soundBuffers = {};   // name -> AudioBuffer מפוענח
+
   function ensureAudio() {
     if (!audio) {
       try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
+      for (const name in rawSounds) decodeSound(name);
     }
     // ב-iOS ההקשר נפתח מושהה עד מחווה של המשתמש
     if (audio && audio.state === 'suspended') audio.resume().catch(() => {});
   }
+
+  function decodeSound(name) {
+    if (!audio || !rawSounds[name] || soundBuffers[name]) return;
+    const data = rawSounds[name];
+    rawSounds[name] = null;   // decodeAudioData מרוקן את ה-ArrayBuffer
+    try {
+      audio.decodeAudioData(data, buf => { soundBuffers[name] = buf; }, () => {});
+    } catch (e) { /* נשארים עם הצפצוף */ }
+  }
+
+  (function prefetchSounds() {
+    for (const name in SOUND_FILES) {
+      fetch('sounds/' + SOUND_FILES[name].file)
+        .then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+        .then(data => { rawSounds[name] = data; decodeSound(name); })
+        .catch(() => { /* אין קובץ - נשארים עם הצפצוף */ });
+    }
+  })();
+
+  function playSample(name) {
+    const buf = soundBuffers[name];
+    if (!audio || !buf || audio.state === 'suspended') return false;
+    try {
+      const def = SOUND_FILES[name];
+      const src = audio.createBufferSource();
+      const gain = audio.createGain();
+      src.buffer = buf;
+      // שינוי גובה קל בסאונדים שחוזרים הרבה, כדי שלא ישעממו
+      if (def.rate) src.playbackRate.value = 1 + rand(-def.rate, def.rate);
+      gain.gain.value = def.vol;
+      src.connect(gain).connect(audio.destination);
+      src.start();
+      return true;
+    } catch (e) { return false; }
+  }
+
   function beep(freq, dur = 0.08, type = 'square', vol = 0.06) {
     if (!audio) return;
     try {
@@ -76,7 +131,9 @@
       o.stop(audio.currentTime + dur);
     } catch (e) { /* ignore */ }
   }
-  const sfx = {
+
+  // גיבוי סינתטי, לשימוש רק אם קובץ הסאונד לא נטען
+  const beeps = {
     jump: () => beep(420, 0.1, 'square'),
     pancake: () => { beep(880, 0.06, 'triangle', 0.08); setTimeout(() => beep(1320, 0.08, 'triangle', 0.08), 50); },
     hit: () => beep(120, 0.25, 'sawtooth', 0.1),
@@ -86,6 +143,11 @@
     shield: () => { beep(500, 0.15, 'square', 0.08); setTimeout(() => beep(900, 0.25, 'square', 0.08), 100); },
     fart: () => { for (let i = 0; i < 7; i++) setTimeout(() => beep(70 + Math.random() * 40, 0.09, 'sawtooth', 0.12), i * 60); },
   };
+
+  const sfx = {};
+  for (const name in SOUND_FILES) {
+    sfx[name] = () => { if (!playSample(name)) beeps[name](); };
+  }
 
   // ============================================================
   //  דמויות (placeholder low-poly). הדמות פונה ל-+Z (אל המצלמה).
@@ -1207,5 +1269,5 @@
   requestAnimationFrame(frame);
 
   // חשיפה לדיבוג בקונסול
-  window.RoadRun = { state, jump, moveLane, fart, spawnSpecial, startGame, toMenu, PLAYER_Z, LANE_W, roadTex, scene, camera, renderer, gestureStart, gestureMove, gestureEnd };
+  window.RoadRun = { state, jump, moveLane, fart, spawnSpecial, startGame, toMenu, PLAYER_Z, LANE_W, roadTex, scene, camera, renderer, sfx, soundBuffers, gestureStart, gestureMove, gestureEnd };
 })();
